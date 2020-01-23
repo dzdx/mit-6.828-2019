@@ -140,6 +140,12 @@ UPROGS=\
 	$U/_bcachetest\
 	$U/_mounttest\
 	$U/_crashtest\
+	$U/_sleep\
+	$U/_pingpong\
+	$U/_primes\
+	$U/_find\
+	$U/_xargs\
+	$U/_nsh\
 
 fs.img: mkfs/mkfs README user/xargstest.sh $(UPROGS)
 	mkfs/mkfs fs.img README user/xargstest.sh $(UPROGS)
@@ -171,6 +177,9 @@ QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-devic
 
 qemu: $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS)
+
+index: $K/kernel fs.img
+	echo done
 
 .gdbinit: .gdbinit.tmpl-riscv
 	sed "s/:1234/:$(GDBPORT)/" < $^ > $@
