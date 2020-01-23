@@ -18,3 +18,5 @@ user/usys.S
 myapi.key
 *-handin.tar.gz
 xv6.out*
+.idea
+compile_commands.json
