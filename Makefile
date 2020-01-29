@@ -184,6 +184,9 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
+index: $K/kernel fs.img
+	echo done
+
 
 ##
 ##  FOR submitting lab solutions
