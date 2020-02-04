@@ -57,9 +57,8 @@ void bit_clear(char *array, int index) {
 }
 
 void bit_xor_set(char* array, int index) {
-  char b = array[index/8];
   char m = (1 << (index % 8));
-  array[index/8] = (b ^ m);
+  array[index/8] ^= m;
 }
 
 // Print a bit vector as a list of ranges of 1 bits
