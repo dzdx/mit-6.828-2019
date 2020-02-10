@@ -47,8 +47,11 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+  if(n > 0){
+    myproc()->sz = addr+n;
+  }else if(n < 0){
+    growproc(n);
+  }
   return addr;
 }
 
@@ -94,4 +97,10 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_vmprint(void){
+  vmprint(myproc()->pagetable);
+  return 0;
 }

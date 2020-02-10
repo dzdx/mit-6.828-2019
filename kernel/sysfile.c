@@ -84,10 +84,16 @@ sys_write(void)
   struct file *f;
   int n;
   uint64 p;
-
-  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
+ if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
-
+ uint64 va = PGROUNDDOWN(p);
+ for(;va<p+n;va+=PGSIZE){
+   if(walkaddr(myproc()->pagetable, va)==0){
+     if(handle_pagefault(myproc(), va)<0){
+       return -1;
+     }
+   }
+ }
   return filewrite(f, p, n);
 }
 
@@ -471,6 +477,12 @@ sys_pipe(void)
     fileclose(rf);
     fileclose(wf);
     return -1;
+  }
+  uint64 va = PGROUNDDOWN(fdarray);
+  if(walkaddr(p->pagetable, va) == 0){
+    if(handle_pagefault(p, va)<0) {
+      return -1;
+    }
   }
   if(copyout(p->pagetable, fdarray, (char*)&fd0, sizeof(fd0)) < 0 ||
      copyout(p->pagetable, fdarray+sizeof(fd0), (char *)&fd1, sizeof(fd1)) < 0){

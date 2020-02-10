@@ -176,7 +176,6 @@ filewrite(struct file *f, uint64 addr, int n)
   } else {
     panic("filewrite");
   }
-
   return ret;
 }
 

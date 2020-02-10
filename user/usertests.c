@@ -1745,7 +1745,7 @@ sbrkfail(char *s)
     exit(1);
   }
 
-  // test running fork with the above allocated page 
+  // test running fork with the above allocated page
   pid = fork();
   if(pid < 0){
     printf("%s: fork failed\n", s);
@@ -1943,11 +1943,11 @@ stacktest(char *s)
 {
   int pid;
   int xstatus;
-  
+
   pid = fork();
   if(pid == 0) {
     char *sp = (char *) r_sp();
-    sp -= PGSIZE;
+    sp -=PGSIZE;
     // the *sp should cause a trap.
     printf("%s: stacktest: read below stack %p\n", *sp);
     exit(1);
