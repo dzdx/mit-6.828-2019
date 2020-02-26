@@ -257,7 +257,21 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
-
+  struct vma* vma = p->vma;
+  struct vma* nvma = 0;
+  while(vma){
+    struct vma* vmacp = allocvma();
+    memmove(vmacp, vma, sizeof(struct vma));
+    vmacp->file = filedup(vma->file);
+    if(!nvma){
+      np->vma = vmacp;
+      nvma = np->vma;
+    }else{
+      nvma->next = vmacp;
+      nvma = nvma->next;
+    }
+    vma = vma->next;
+  }
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -377,7 +391,15 @@ exit(int status)
   p->state = ZOMBIE;
 
   release(&original_parent->lock);
-
+  struct vma *vma = p->vma;
+  while(vma){
+    for (uint64 va = vma->start; va < vma->end; va += PGSIZE) {
+      if(walkaddr(p->pagetable, va)){
+        uvmunmap(p->pagetable, va, PGSIZE, 1);
+      }
+    }
+    vma = vma->next;
+  }
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
@@ -711,8 +733,8 @@ struct vma* allocvma(){
 void freevma(struct vma *vma){
   acquire(&vma_lock);
   vma->used = 0;
-  fileclose(vma->file);
   release(&vma_lock);
+  fileclose(vma->file);
 }
 
 int handle_page_fault(uint64 addr){
@@ -732,10 +754,9 @@ int handle_page_fault(uint64 addr){
     vma = vma->next;
   }
   if(!found){
-    printf("vma not found\n");
     return -1;
   }
-  int perm =PTE_U | PTE_X;
+  int perm = PTE_U | PTE_V;
   if(vma->prot & PROT_READ){
     perm |= PTE_R;
   }
@@ -747,7 +768,7 @@ int handle_page_fault(uint64 addr){
     return -1;
   }
   ilock(vma->file->ip);
-  if(readi(vma->file->ip,  1, page_addr, page_addr-vma->start, PGSIZE) < 0){
+  if(readi(vma->file->ip,  1, page_addr, page_addr-vma->file_start, PGSIZE) < 0){
     iunlock(vma->file->ip);
     return -1;
   }

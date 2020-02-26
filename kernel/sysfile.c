@@ -391,7 +391,7 @@ sys_chdir(void)
   char path[MAXPATH];
   struct inode *ip;
   struct proc *p = myproc();
-  
+
   begin_op(ROOTDEV);
   if(argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0){
     end_op(ROOTDEV);
@@ -495,14 +495,18 @@ uint64 sys_mmap(void) {
       argint(3, &flags) < 0 || argfd(4, 0, &f) < 0) {
     return -1;
   }
+  if(!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED)){
+    return -1;
+  }
   uint64 end_addr = PGROUNDDOWN(TRAPFRAME);
   struct proc *p = myproc();
   if(p->vma){
     end_addr = PGROUNDDOWN(p->vma->start);
   }
   struct vma * vma = allocvma();
-  vma->start = end_addr-length;
+  vma->start = PGROUNDDOWN(end_addr-length);
   vma->end = end_addr;
+  vma->file_start = vma->start;
   vma->prot = prot;
   vma->flags = flags;
   vma->file = filedup(f);
@@ -510,39 +514,65 @@ uint64 sys_mmap(void) {
   p->vma = vma;
   return vma->start;
 }
+
 uint64 sys_munmap(void) {
   uint64 addr;
   int length;
   if (argaddr(0, &addr) < 0 || argint(1, &length) < 0) {
     return -1;
   }
-  struct proc * p = myproc();
+  struct proc *p = myproc();
   struct vma *vma = p->vma;
   struct vma *prev = 0;
-  while(vma){
-    uint64 range_end = addr+length;
-    uint64 range_start = addr;
-    if(vma->start <= range_start && range_end <= vma->end){
-     if(vma->start == range_start && vma->end == range_end){
-       if(prev){
-         prev->next = vma->next;
-       }else{
-         p->vma = vma->next;
-       }
-       freevma(vma);
-       return 0;
-     }else if(vma->start == range_start){
-        vma->start = range_end;
-        return 0;
-      }else if(vma->end == range_end){
-        vma->end = range_start;
-        return 0;
-      }else{
-        return -1;
+  while (vma) {
+    uint64 unmap_end = PGROUNDUP(addr + length);
+    uint64 unmap_start = PGROUNDDOWN(addr);
+    if(vma->end <= unmap_start || vma->start >= unmap_end){
+      // not overlay
+      prev = vma;
+      vma = vma->next;
+      continue;
+    }
+    if((unmap_start < vma->start && unmap_end <= vma->end) || (unmap_start >= vma->start && unmap_end > vma->end )){
+      // ERROR: partial overlay
+      return -1;
+    }
+
+    if (vma->start < unmap_start && vma->end > unmap_end) {
+      // ERROR: hole
+      return -1;
+    }
+    if (vma->flags & MAP_SHARED) {
+      begin_op(vma->file->ip->dev);
+      ilock(vma->file->ip);
+      writei(vma->file->ip, 1, unmap_start, unmap_start - vma->file_start,
+             unmap_end - unmap_start);
+      iunlock(vma->file->ip);
+      end_op(vma->file->ip->dev);
+    }
+    for (uint64 va = unmap_start; va < unmap_end; va += PGSIZE) {
+      if(walkaddr(p->pagetable, va)){
+        uvmunmap(p->pagetable, va, PGSIZE, 1);
       }
     }
-    prev = vma;
-    vma = vma->next;
+    if (vma->start == unmap_start && vma->end == unmap_end) {
+      // unmap whole
+      if (prev) {
+        prev->next = vma->next;
+      } else {
+        p->vma = vma->next;
+      }
+      freevma(vma);
+    }
+    if (vma->end == unmap_end) {
+      //  unmap back half
+      vma->end = unmap_start;
+    }
+    if (vma->start == unmap_start) {
+      // unmap front half
+      vma->start = unmap_end;
+    }
+    return 0;
   }
   return -1;
 }
