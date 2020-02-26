@@ -143,6 +143,7 @@ UPROGS=\
 	$U/_bcachetest\
 	$U/_alloctest\
 	$U/_bigfile\
+	$U/_mmaptest\
 
 fs.img: mkfs/mkfs README user/xargstest.sh $(UPROGS)
 	mkfs/mkfs fs.img README user/xargstest.sh $(UPROGS)
@@ -265,5 +266,7 @@ myapi.key:
 		false; \
 	fi;
 
+index: $K/kernel .gdbinit fs.img
+	echo done
 
 .PHONY: handin tarball tarball-pref clean grade handin-check

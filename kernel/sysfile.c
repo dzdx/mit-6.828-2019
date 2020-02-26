@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -483,3 +484,65 @@ sys_pipe(void)
   return 0;
 }
 
+uint64 sys_mmap(void) {
+  struct file *f;
+
+  int length;
+  int prot;
+  int flags;
+
+  if (argint(1, &length) < 0 || argint(2, &prot) < 0 ||
+      argint(3, &flags) < 0 || argfd(4, 0, &f) < 0) {
+    return -1;
+  }
+  uint64 end_addr = PGROUNDDOWN(TRAPFRAME);
+  struct proc *p = myproc();
+  if(p->vma){
+    end_addr = PGROUNDDOWN(p->vma->start);
+  }
+  struct vma * vma = allocvma();
+  vma->start = end_addr-length;
+  vma->end = end_addr;
+  vma->prot = prot;
+  vma->flags = flags;
+  vma->file = filedup(f);
+  vma->next= p->vma;
+  p->vma = vma;
+  return vma->start;
+}
+uint64 sys_munmap(void) {
+  uint64 addr;
+  int length;
+  if (argaddr(0, &addr) < 0 || argint(1, &length) < 0) {
+    return -1;
+  }
+  struct proc * p = myproc();
+  struct vma *vma = p->vma;
+  struct vma *prev = 0;
+  while(vma){
+    uint64 range_end = addr+length;
+    uint64 range_start = addr;
+    if(vma->start <= range_start && range_end <= vma->end){
+     if(vma->start == range_start && vma->end == range_end){
+       if(prev){
+         prev->next = vma->next;
+       }else{
+         p->vma = vma->next;
+       }
+       freevma(vma);
+       return 0;
+     }else if(vma->start == range_start){
+        vma->start = range_end;
+        return 0;
+      }else if(vma->end == range_end){
+        vma->end = range_start;
+        return 0;
+      }else{
+        return -1;
+      }
+    }
+    prev = vma;
+    vma = vma->next;
+  }
+  return -1;
+}

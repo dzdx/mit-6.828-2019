@@ -14,6 +14,8 @@ struct cpu cpus[NCPU];
 struct proc proc[NPROC];
 
 struct proc *initproc;
+struct vma vma_pool[VMAPOOLSIZE];
+struct spinlock vma_lock;
 
 int nextpid = 1;
 struct spinlock pid_lock;
@@ -27,7 +29,8 @@ void
 procinit(void)
 {
   struct proc *p;
-  
+
+  initlock(&vma_lock, "vma");
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
@@ -689,4 +692,65 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+struct vma* allocvma(){
+  struct vma * vma;
+  acquire(&vma_lock);
+  for(vma = vma_pool; vma < &vma_pool[VMAPOOLSIZE]; vma++){
+    if(!vma->used){
+      vma->used = 1;
+      release(&vma_lock);
+      return vma;
+    }
+  }
+  release(&vma_lock);
+  return 0;
+}
+
+void freevma(struct vma *vma){
+  acquire(&vma_lock);
+  vma->used = 0;
+  fileclose(vma->file);
+  release(&vma_lock);
+}
+
+int handle_page_fault(uint64 addr){
+  uint64 page_addr = PGROUNDDOWN(addr);
+  char *mem = kalloc();
+  if(mem == 0)
+    return -1;
+  memset(mem, 0, PGSIZE);
+  struct proc * p = myproc();
+  struct vma *vma = p->vma;
+  int found = 0;
+  while(vma){
+    if(vma->start <= addr && vma->end > addr){
+      found = 1;
+      break;
+    }
+    vma = vma->next;
+  }
+  if(!found){
+    printf("vma not found\n");
+    return -1;
+  }
+  int perm =PTE_U | PTE_X;
+  if(vma->prot & PROT_READ){
+    perm |= PTE_R;
+  }
+  if(vma->prot & PROT_WRITE){
+    perm |= PTE_W;
+  }
+  if(mappages(p->pagetable, page_addr, PGSIZE, (uint64)mem, perm) != 0){
+    kfree(mem);
+    return -1;
+  }
+  ilock(vma->file->ip);
+  if(readi(vma->file->ip,  1, page_addr, page_addr-vma->start, PGSIZE) < 0){
+    iunlock(vma->file->ip);
+    return -1;
+  }
+  iunlock(vma->file->ip);
+  return 0;
 }
