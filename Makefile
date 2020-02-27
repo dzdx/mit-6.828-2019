@@ -283,5 +283,7 @@ myapi.key:
 		false; \
 	fi;
 
+index: $K/kernel .gdbinit fs.img
+	echo done
 
 .PHONY: handin tarball tarball-pref clean grade handin-check
