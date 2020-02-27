@@ -119,6 +119,7 @@ found:
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
+  p->vma = 0;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -341,7 +342,17 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
-
+  struct vma *vma = p->vma;
+  while(vma){
+    for (uint64 va = vma->start; va < vma->end; va += PGSIZE) {
+      if(walkaddr(p->pagetable, va)){
+        uvmunmap(p->pagetable, va, PGSIZE, 1);
+      }
+    }
+    freevma(vma);
+    vma = vma->next;
+  }
+  p->vma = 0;
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
@@ -391,15 +402,7 @@ exit(int status)
   p->state = ZOMBIE;
 
   release(&original_parent->lock);
-  struct vma *vma = p->vma;
-  while(vma){
-    for (uint64 va = vma->start; va < vma->end; va += PGSIZE) {
-      if(walkaddr(p->pagetable, va)){
-        uvmunmap(p->pagetable, va, PGSIZE, 1);
-      }
-    }
-    vma = vma->next;
-  }
+
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
@@ -734,7 +737,6 @@ void freevma(struct vma *vma){
   acquire(&vma_lock);
   vma->used = 0;
   release(&vma_lock);
-  fileclose(vma->file);
 }
 
 int handle_page_fault(uint64 addr){

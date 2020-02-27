@@ -12,4 +12,4 @@
 #define FSSIZE       2000  // size of file system in blocks
 #define MAXPATH      128   // maximum file path name
 #define NDISK        2
-#define VMAPOOLSIZE  64
+#define VMAPOOLSIZE  128
