@@ -23,3 +23,5 @@ xv6.out*
 submissions/
 .idea/
 compile_commands.json
+packets.pcap
+

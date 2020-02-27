@@ -95,6 +95,21 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(struct mbuf *m)
 {
+  int pos = regs[E1000_TDT];
+  struct tx_desc *desc = &tx_ring[pos];
+  if(!(desc->status & E1000_TXD_STAT_DD)){
+    return -1;
+  }
+  struct mbuf *buf = tx_mbufs[pos];
+  if(buf){
+    mbuffree(buf);
+  }
+  desc->addr = (uint64)m->head;
+  desc->length = m->len;
+  desc->cmd |= E1000_TXD_CMD_EOP;
+  tx_mbufs[pos] = m;
+  regs[E1000_TDT] = (pos + 1) % TX_RING_SIZE;
+  return 0;
   //
   // Your code here.
   //
@@ -102,12 +117,26 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
-  return -1;
 }
 
 static void
 e1000_recv(void)
 {
+  while (1) {
+    int next_pos = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+    struct rx_desc *desc = &rx_ring[next_pos];
+    if (!(desc->status & E1000_RXD_STAT_DD)) {
+      return;
+    }
+
+    mbufput(rx_mbufs[next_pos], desc->length);
+    net_rx(rx_mbufs[next_pos]);
+    struct mbuf *buf = mbufalloc(0);
+    desc->addr = (uint64)buf->head;
+    desc->status = 0;
+    rx_mbufs[next_pos] = buf;
+    regs[E1000_RDT] = next_pos;
+  }
   //
   // Your code here.
   //

@@ -98,5 +98,67 @@ sockrecvudp(struct mbuf *m, uint32 raddr, uint16 lport, uint16 rport)
   // any sleeping reader. Free the mbuf if there are no sockets
   // registered to handle it.
   //
-  mbuffree(m);
+  struct sock * sock = 0;
+  for(sock = sockets; sock;sock=sock->next){
+    if(sock->rport==rport && sock->lport==lport && sock->raddr == raddr){
+      mbufq_pushtail(&sock->rxq, m);
+      wakeup(&sock->rxq);
+    }
+  }
+}
+
+void sockclose(struct sock* sock){
+  struct sock* cur = sockets;
+  struct sock* prev = 0;
+  while(cur){
+    if(cur == sock){
+      if(prev){
+        prev->next = cur->next;
+      }else{
+        sockets = 0;
+      }
+      kfree(sock);
+      return;
+    }
+    prev = cur;
+    cur = cur->next;
+  }
+}
+int sockwrite(struct sock *sock, uint64 addr, int n) {
+  // udp packet size must be smaller than MTU, no need loop
+  struct proc *pr = myproc();
+  acquire(&sock->lock);
+  int nwrite = 0;
+  int headroom = sizeof(struct udp) + sizeof(struct ip) + sizeof(struct eth);
+  struct mbuf *buf = mbufalloc(headroom);
+  uint64 size = n > (MBUF_SIZE - headroom) ? (MBUF_SIZE - headroom) : n;
+  copyin(pr->pagetable, buf->head, addr, size);
+  nwrite += size;
+  buf->len = size;
+  net_tx_udp(buf, sock->raddr, sock->lport, sock->rport);
+  release(&sock->lock);
+  return nwrite;
+}
+
+int sockread(struct sock *sock, uint64 addr, int n) {
+  // udp packet size must be smaller than MTU, no need loop
+  struct proc *pr = myproc();
+  acquire(&sock->lock);
+  struct mbuf *buf = 0;
+  int nread = 0;
+  // wait for rx ready
+  while (mbufq_empty(&sock->rxq)) {
+    if (myproc()->killed) {
+      release(&sock->lock);
+      return -1;
+    }
+    sleep(&sock->rxq, &sock->lock);
+  }
+  buf = mbufq_pophead(&sock->rxq);
+  uint64 size = n > buf->len ? buf->len : n;
+  copyout(pr->pagetable, addr, buf->head, size);
+  nread += size;
+  mbuffree(buf);
+  release(&sock->lock);
+  return nread;
 }
